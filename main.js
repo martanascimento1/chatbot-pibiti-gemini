@@ -1,4 +1,4 @@
-const API_KEY = "AIzaSyC_EiB1UcZKAyY4gqPonBAgbLRBVq3bFJU"; // <- cole sua chave aqui 
+const API_KEY = "KEY"; // <- cole sua chave aqui 
 
 // Link CSV da planilha 
 const URL_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSdy74VMFCuowXzxgtAcYPDLmU6cj4crafrcd5DrvbltDRYN-_2JbaJZonYOK710n8sVUOhwS5bf9Tl/pub?output=csv"; 
@@ -25,7 +25,16 @@ const entendimentoInfo = `
     - Se a resposta estiver completa: comece com "✅ Legal!" e confirme de forma breve. 
     Não repita instruções já dadas.
     Utilize emojis sempre que conveniente. 
-`; 
+`;
+
+const planejamentoInfo = `
+    Agora você está na etapa de PLANEJAMENTO, seguindo a metodologia de Polya.
+    O aluno deve criar um pseudocódigo ou fluxograma para organizar o raciocínio.
+    Sua função:
+    1. Incentivar o aluno a escrever um passo a passo simples (pseudocódigo ou fluxograma textual).
+    2. Se o aluno ainda não entender, sugira exemplos bem básicos para guiá-lo.
+    3. Se o aluno demonstrar clareza (pseudocódigo consistente), confirme com "✅ Legal!" e direcione para o desenvolvimento.
+`;
 
 const codificacaoInfo = `
     Agora você está na etapa de CODIFICAÇÃO, seguindo a metodologia de Polya.  
@@ -147,20 +156,13 @@ async function sendMessage() {
     const feedback = await sendToAPI(message, "O estudante respondeu sobre as ENTRADAS. Responda amigavelmente e incentive a pensar"); 
     
     if (feedback.startsWith("🤔")) { 
-      currentStep = "entendimento_input_faltante"; 
+      currentStep = "planejamento_condicional"; 
+      addMessage("🤔 Vamos pensar mais um pouco... Para te ajudar, que tal criar um pseudocódigo ou fluxograma para o problema?");
     } else { 
       entradas = message; 
       currentStep = "entendimento_output"; 
       addMessage("Agora, quais serão as SAÍDAS (resultados) do programa?"); 
     } 
-    return; 
-  } 
-
-  if (currentStep === "entendimento_input_faltante") { 
-    hipoteseEntradas = message; 
-    addMessage("Boa! Vamos continuar."); 
-    currentStep = "entendimento_output"; 
-    addMessage("Quais serão as SAÍDAS (resultados) do programa?"); 
     return; 
   } 
 
@@ -170,20 +172,13 @@ async function sendMessage() {
     const feedback = await sendToAPI(message, "O aluno respondeu sobre as SAÍDAS. Responda amigavelmente"); 
     
     if (feedback.startsWith("🤔")) { 
-      currentStep = "entendimento_output_faltante"; 
+      currentStep = "planejamento_condicional"; 
+      addMessage("🤔 Vamos pensar mais um pouco... Para te ajudar, que tal criar um pseudocódigo ou fluxograma para o problema?");
     } else { 
       saidas = message; 
       currentStep = "entendimento_condicoes"; 
       addMessage("Existem RESTRIÇÕES ou CONDIÇÕES especiais a considerar?"); 
     } 
-    return; 
-  } 
-
-  if (currentStep === "entendimento_output_faltante") { 
-    hipoteseSaidas = message; 
-    addMessage("Boa! Vamos em frente."); 
-    currentStep = "entendimento_condicoes"; 
-    addMessage("Existem RESTRIÇÕES ou CONDIÇÕES especiais a considerar?"); 
     return; 
   } 
 
@@ -193,32 +188,38 @@ async function sendMessage() {
     const feedback = await sendToAPI(message, "O aluno respondeu sobre as RESTRIÇÕES. Responda amigavelmente"); 
     
     if (feedback.startsWith("🤔")) { 
-      currentStep = "entendimento_condicoes_faltante"; 
+      currentStep = "planejamento_condicional"; 
+      addMessage("🤔 Vamos pensar mais um pouco... Para te ajudar, que tal criar um pseudocódigo ou fluxograma para o problema?");
     } else { 
       restricoes = message; 
       currentStep = "desenvolvimento"; 
       addMessage("Muito bem! Agora vamos para a etapa de DESENVOLVIMENTO.\nComo você resolveria este problema passo a passo?"); 
     } 
     return; 
-  } 
+  }
 
-  if (currentStep === "entendimento_condicoes_faltante") { 
-    hipoteseRestricoes = message; 
-    addMessage("Isso mesmo, você está pegando o jeito."); 
-    currentStep = "desenvolvimento"; 
-    addMessage("Vamos para a etapa de DESENVOLVIMENTO. Como você resolveria este problema passo a passo?"); 
-    return; 
-  } 
+  // ---------------- PLANEJAMENTO CONDICIONAL ----------------
+
+  if (currentStep === "planejamento_condicional") {
+  const feedback = await sendToAPI(message, planejamentoInfo);
+
+  if (feedback.includes("✅")) {
+    currentStep = "desenvolvimento";
+    addMessage("Ótimo! Agora que você tem um plano, vamos para a etapa de DESENVOLVIMENTO.\nComo você resolveria este problema passo a passo?");
+  } else {
+    addMessage("Continue tentando escrever seu pseudocódigo ou fluxograma. Isso vai te ajudar a entender melhor o problema! 💡");
+  }
+  return;
+}
 
   // ---------------- DESENVOLVIMENTO ---------------- 
 
   if (currentStep === "desenvolvimento") { 
-    await sendToAPI(message, "Analise este plano de resolução se não precisar de melhoria, elogie o estudante."); 
+    await sendToAPI(message, "Analise este plano de resolução. Se não precisar de melhoria, elogie o estudante e o instrua a iniciar a codificação."); 
     currentStep = "codificacao_variaveis"; 
-    addMessage("Legal! Finalizamos a etapa de ENTENDIMENTO."); 
-    addMessage("Agora vamos para a etapa de CODIFICAÇÃO.\ncomo você declararia as variáveis de entrada?"); 
+    addMessage("Legal! Agora que você tem um plano de desenvolvimento, vamos para a etapa de CODIFICAÇÃO.\nComo você declararia as variáveis de entrada?"); 
     return; 
-  } 
+  }
 
 
 // ---------------- CODIFICAÇÃO ---------------- 
