@@ -1,4 +1,4 @@
-const API_KEY = "AIzaSyBz38TxOhl41GV75onvF3_YbdHiEZQ4Y60"; // <- cole sua chave aqui 
+const API_KEY = ""; // <- cole sua chave aqui 
 
 // Link CSV da planilha 
 const URL_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSdy74VMFCuowXzxgtAcYPDLmU6cj4crafrcd5DrvbltDRYN-_2JbaJZonYOK710n8sVUOhwS5bf9Tl/pub?output=csv"; 
@@ -50,17 +50,14 @@ const messageInput = document.getElementById('messageInput');
 const sendBtn = document.getElementById('sendBtn'); 
 const chatMessages = document.getElementById('chatMessages'); 
 
-let model = null; 
 let currentStep = null; 
 let questaoAtual = "";
 
 // Variáveis para as dúvidas
-
 let duvidas = { variaveis: 0, processamento: 0, saida: 0 };
 let estavaEmDuvida = { variaveis: false, processamento: false, saida: false }; 
 
 // variáveis para armazenar respostas 
-
 let entradas = ""; 
 let hipoteseEntradas = ""; 
 let saidas = ""; 
@@ -105,20 +102,66 @@ async function sendToAPI(message, context = "") {
   showTyping(); 
   try { 
     let text = "Resposta simulada."; 
-    if (model) { 
-      const prompt = `${context}\nQuestão: ${questaoAtual}\nAluno: ${message}`; 
-      const result = await model.generateContent(prompt); 
-      text = result.response.text(); 
-    } 
+    
+    if (API_KEY) {
+      // Combina o contexto com o prompt do sistema
+      const systemPrompt = context || entendimentoInfo;
+      const fullPrompt = `${systemPrompt}\n\nQuestão: ${questaoAtual}\n\nAluno: ${message}\n\nAssistente:`;
+      
+      // main.js - LINHA 131 (CORREÇÃO)
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: fullPrompt
+            }]
+          }],
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 500
+          }
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error("Erro da API:", errorData);
+        throw new Error(`API retornou status ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
+        text = data.candidates[0].content.parts[0].text;
+      } else {
+        throw new Error("Resposta da API em formato inesperado");
+      }
+    }
+    
     hideTyping(); 
     addMessage(text); 
     return text; 
   } catch (error) { 
-    console.error("Erro:", error); 
+    console.error("Erro completo:", error); 
     hideTyping(); 
-    addMessage("Erro ao consultar a API.", false, true); 
+    addMessage("Erro ao consultar a API: " + error.message, false, true); 
+    return ""; 
   } 
 } 
+
+// Função auxiliar para detectar dúvidas
+function isDuvida(msg) {
+  return /não sei|nao sei|não entendi|nao entendi|como faço|como faz|tenho dúvida|tenho duvida/i.test(msg);
+}
+
+// Função auxiliar para detectar pedidos de exemplo
+function isExemplo(msg) {
+  return /me dê um exemplo|me da um exemplo|mostra um exemplo|exemplo/i.test(msg);
+}
 
 // ---------------------- Fluxo ----------------------
 
@@ -130,7 +173,6 @@ async function sendMessage() {
   messageInput.value = ''; 
 
   // Caso inicial: aluno escolhe a questão 
-
   if (!questaoAtual) { 
     const numero = parseInt(message); 
     if (!isNaN(numero) && numero >= 2 && numero <= 42) { 
@@ -139,17 +181,15 @@ async function sendMessage() {
       addMessage("Vamos começar pela etapa de ENTENDIMENTO.\nQuais são as ENTRADAS (dados de entrada) que o programa receberá?"); 
       currentStep = "entendimento_input"; 
     } else { 
-      addMessage("Digite o número da questão: .", false, true); 
+      addMessage("Digite o número da questão: 2 a 42.", false, true); 
     } 
     return; 
   } 
 
   // ---------------- ENTENDIMENTO ---------------- 
-
   // ---------------- ENTRADAS ---------------- 
-
   if (currentStep === "entendimento_input") { 
-    const feedback = await sendToAPI(message, "O estudante respondeu sobre as ENTRADAS. Responda amigavelmente e incentive a pensar"); 
+    const feedback = await sendToAPI(message, entendimentoInfo + "\nO estudante respondeu sobre as ENTRADAS. Valide se está completo."); 
     
     if (feedback.startsWith("🤔")) { 
       currentStep = "entendimento_input_faltante"; 
@@ -170,9 +210,8 @@ async function sendMessage() {
   } 
 
   // ---------------- SAÍDAS ---------------- 
-
   if (currentStep === "entendimento_output") { 
-    const feedback = await sendToAPI(message, "O aluno respondeu sobre as SAÍDAS. Responda amigavelmente"); 
+    const feedback = await sendToAPI(message, entendimentoInfo + "\nO aluno respondeu sobre as SAÍDAS. Valide se está completo."); 
     
     if (feedback.startsWith("🤔")) { 
       currentStep = "entendimento_output_faltante"; 
@@ -193,9 +232,8 @@ async function sendMessage() {
   } 
 
   // ---------------- RESTRIÇÕES ---------------- 
-
   if (currentStep === "entendimento_condicoes") { 
-    const feedback = await sendToAPI(message, "O aluno respondeu sobre as RESTRIÇÕES. Responda amigavelmente"); 
+    const feedback = await sendToAPI(message, entendimentoInfo + "\nO aluno respondeu sobre as RESTRIÇÕES. Valide se está completo."); 
     
     if (feedback.startsWith("🤔")) { 
       currentStep = "entendimento_condicoes_faltante"; 
@@ -216,157 +254,143 @@ async function sendMessage() {
   } 
 
   // ---------------- DESENVOLVIMENTO ---------------- 
-
   if (currentStep === "desenvolvimento") { 
-    await sendToAPI(message, "Analise este plano de resolução se não precisar de melhoria, elogie o estudante."); 
+    await sendToAPI(message, entendimentoInfo + "\nAnalise este plano de resolução. Se estiver bom, elogie o estudante."); 
     currentStep = "codificacao_variaveis"; 
     addMessage("Legal! Finalizamos a etapa de ENTENDIMENTO."); 
-    addMessage("Agora vamos para a etapa de CODIFICAÇÃO.\ncomo você declararia as variáveis de entrada?"); 
+    addMessage("Agora vamos para a etapa de CODIFICAÇÃO.\nComo você declararia as variáveis de entrada?"); 
     return; 
   } 
 
+  // ---------------- CODIFICAÇÃO ---------------- 
+  // ---------------- ENTRADA ---------------- 
+  if (currentStep === "codificacao_variaveis") { 
+    if (isDuvida(message)) {
+      duvidas.variaveis++;
+      estavaEmDuvida.variaveis = true;
 
-// ---------------- CODIFICAÇÃO ---------------- 
+      let contexto;
+      if (duvidas.variaveis === 1) {
+        contexto = codificacaoInfo + "\nO aluno demonstrou dúvida sobre declarar variáveis. Explique passo a passo e dê um exemplo CURTO, só de variáveis.";
+      } else if (duvidas.variaveis === 2) {
+        contexto = codificacaoInfo + "\nO aluno ainda tem dúvida sobre declarar variáveis. Use uma analogia simples (ex: 'caixa') e mostre um exemplo comentado, só de variáveis.";
+      } else {
+        contexto = codificacaoInfo + "\nO aluno continua com dificuldade sobre variáveis. Mostre um exemplo resolvido com 2-3 variáveis e comentários, mas sem processamento ou saída.";
+      }
 
-// Função auxiliar para detectar dúvidas
-function isDuvida(msg) {
-  return /não sei|nao sei|não entendi|nao entendi|como faço|como faz|tenho dúvida|tenho duvida/i.test(msg);
-}
-
-// Função auxiliar para detectar pedidos de exemplo
-function isExemplo(msg) {
-  return /me dê um exemplo|me da um exemplo|mostra um exemplo|exemplo/i.test(msg);
-}
-
-// ---------------- ENTRADA ---------------- 
-
-if (currentStep === "codificacao_variaveis") { 
-  if (isDuvida(message)) {
-    duvidas.variaveis++;
-    estavaEmDuvida.variaveis = true;
-
-    let contexto;
-    if (duvidas.variaveis === 1) {
-      contexto = codificacaoInfo + "\nO aluno demonstrou dúvida sobre declarar variáveis. Explique passo a passo e dê um exemplo CURTO, só de variáveis.";
-    } else if (duvidas.variaveis === 2) {
-      contexto = codificacaoInfo + "\nO aluno ainda tem dúvida sobre declarar variáveis. Use uma analogia simples (ex: 'caixa') e mostre um exemplo comentado, só de variáveis.";
-    } else {
-      contexto = codificacaoInfo + "\nO aluno continua com dificuldade sobre variáveis. Mostre um exemplo resolvido com 2-3 variáveis e comentários, mas sem processamento ou saída.";
+      await sendToAPI(message, contexto);
+      return;
     }
 
-    await sendToAPI(message, contexto);
-    return; // mantém na mesma etapa
-  }
-
-  if (isExemplo(message)) {
-    await sendToAPI(
-      message,
-      codificacaoInfo + "\nMostre apenas um exemplo simples de declaração de variáveis, sem incluir processamento nem saída."
-    );
-    return; // mantém na mesma etapa
-  }
-
-  if (estavaEmDuvida.variaveis) {
-    addMessage("Muito bom! Você conseguiu tirar a sua dúvida 👏");
-    duvidas.variaveis = 0;
-    estavaEmDuvida.variaveis = false;
-  }
-
-  await sendToAPI(
-    message,
-    codificacaoInfo + "\nO aluno declarou as variáveis. Agora peça o PROCESSAMENTO do programa."
-  ); 
-  currentStep = "codificacao_processamento"; 
-  return; 
-} 
-
-// ---------------- PROCESSAMENTO ----------------
-
-if (currentStep === "codificacao_processamento") { 
-  if (isDuvida(message)) {
-    duvidas.processamento++;
-    estavaEmDuvida.processamento = true;
-
-    let contexto;
-    if (duvidas.processamento === 1) {
-      contexto = codificacaoInfo + "\nO aluno demonstrou dúvida sobre o processamento. Explique passo a passo e dê um exemplo curto só do cálculo.";
-    } else if (duvidas.processamento === 2) {
-      contexto = codificacaoInfo + "\nO aluno ainda tem dúvida sobre o processamento. Quebre em subpassos e mostre exemplos curtos de cálculo.";
-    } else {
-      contexto = codificacaoInfo + "\nO aluno continua com dificuldade. Mostre um exemplo completo de processamento com comentários, mas sem a parte de saída.";
+    if (isExemplo(message)) {
+      await sendToAPI(
+        message,
+        codificacaoInfo + "\nMostre apenas um exemplo simples de declaração de variáveis, sem incluir processamento nem saída."
+      );
+      return;
     }
 
-    await sendToAPI(message, contexto);
-    return;
-  }
-
-  if (isExemplo(message)) {
-    await sendToAPI(
-      message,
-      codificacaoInfo + "\nMostre apenas um exemplo simples de processamento (cálculo), sem variáveis novas e sem saída."
-    );
-    return;
-  }
-
-  if (estavaEmDuvida.processamento) {
-    addMessage("Bom trabalho! Você avançou após a dúvida! 👏");
-    duvidas.processamento = 0;
-    estavaEmDuvida.processamento = false;
-  }
-
-  await sendToAPI(
-    message,
-    codificacaoInfo + "\nO aluno escreveu o processamento. Agora peça a SAÍDA do programa."
-  ); 
-  currentStep = "codificacao_saida"; 
-  return; 
-} 
-
-// ---------------- SAÍDA ----------------
-
-if (currentStep === "codificacao_saida") { 
-  if (isDuvida(message)) {
-    duvidas.saida++;
-    estavaEmDuvida.saida = true;
-
-    let contexto;
-    if (duvidas.saida === 1) {
-      contexto = codificacaoInfo + "\nO aluno demonstrou dúvida sobre saída. Explique formas comuns (print/console/HTML) e mostre exemplo curto só da saída.";
-    } else if (duvidas.saida === 2) {
-      contexto = codificacaoInfo + "\nO aluno ainda tem dúvida sobre saída. Mostre como formatar resultados (ex: 2 casas decimais) e dê exemplo comentado só de saída.";
-    } else {
-      contexto = codificacaoInfo + "\nO aluno continua com dificuldade na saída. Mostre um exemplo completo de entrada→processamento→saída, mas só ofereça o código final se ele pedir explicitamente.";
+    if (estavaEmDuvida.variaveis) {
+      addMessage("Muito bom! Você conseguiu tirar a sua dúvida 👏");
+      duvidas.variaveis = 0;
+      estavaEmDuvida.variaveis = false;
     }
 
-    await sendToAPI(message, contexto);
-    return;
-  }
-
-  if (isExemplo(message)) {
     await sendToAPI(
       message,
-      codificacaoInfo + "\nMostre apenas um exemplo simples de saída (printar um valor), sem incluir todo o programa."
-    );
-    return;
-  }
+      codificacaoInfo + "\nO aluno declarou as variáveis. Valide e peça o PROCESSAMENTO do programa."
+    ); 
+    currentStep = "codificacao_processamento"; 
+    return; 
+  } 
 
-  if (estavaEmDuvida.saida) {
-    addMessage("Excelente! Parabéns 🎉");
-    duvidas.saida = 0;
-    estavaEmDuvida.saida = false;
-  }
+  // ---------------- PROCESSAMENTO ----------------
+  if (currentStep === "codificacao_processamento") { 
+    if (isDuvida(message)) {
+      duvidas.processamento++;
+      estavaEmDuvida.processamento = true;
 
-  await sendToAPI(
-    message,
-    codificacaoInfo + "\nO aluno sugeriu a saída do programa. Elogie o estudante pela conclusão."
-  ); 
-  currentStep = null; 
-  addMessage("🎉 Muito bem! Você completou todas as etapas: ENTENDIMENTO e CODIFICAÇÃO."); 
-  return; 
-} 
+      let contexto;
+      if (duvidas.processamento === 1) {
+        contexto = codificacaoInfo + "\nO aluno demonstrou dúvida sobre o processamento. Explique passo a passo e dê um exemplo curto só do cálculo.";
+      } else if (duvidas.processamento === 2) {
+        contexto = codificacaoInfo + "\nO aluno ainda tem dúvida sobre o processamento. Quebre em subpassos e mostre exemplos curtos de cálculo.";
+      } else {
+        contexto = codificacaoInfo + "\nO aluno continua com dificuldade. Mostre um exemplo completo de processamento com comentários, mas sem a parte de saída.";
+      }
 
-// ---------------- FALLBACK ----------------
-sendToAPI(message);
+      await sendToAPI(message, contexto);
+      return;
+    }
+
+    if (isExemplo(message)) {
+      await sendToAPI(
+        message,
+        codificacaoInfo + "\nMostre apenas um exemplo simples de processamento (cálculo), sem variáveis novas e sem saída."
+      );
+      return;
+    }
+
+    if (estavaEmDuvida.processamento) {
+      addMessage("Bom trabalho! Você avançou após a dúvida! 👏");
+      duvidas.processamento = 0;
+      estavaEmDuvida.processamento = false;
+    }
+
+    await sendToAPI(
+      message,
+      codificacaoInfo + "\nO aluno escreveu o processamento. Valide e peça a SAÍDA do programa."
+    ); 
+    currentStep = "codificacao_saida"; 
+    return; 
+  } 
+
+  // ---------------- SAÍDA ----------------
+  if (currentStep === "codificacao_saida") { 
+    if (isDuvida(message)) {
+      duvidas.saida++;
+      estavaEmDuvida.saida = true;
+
+      let contexto;
+      if (duvidas.saida === 1) {
+        contexto = codificacaoInfo + "\nO aluno demonstrou dúvida sobre saída. Explique formas comuns (print/console/HTML) e mostre exemplo curto só da saída.";
+      } else if (duvidas.saida === 2) {
+        contexto = codificacaoInfo + "\nO aluno ainda tem dúvida sobre saída. Mostre como formatar resultados (ex: 2 casas decimais) e dê exemplo comentado só de saída.";
+      } else {
+        contexto = codificacaoInfo + "\nO aluno continua com dificuldade na saída. Mostre um exemplo completo de entrada→processamento→saída, mas só ofereça o código final se ele pedir explicitamente.";
+      }
+
+      await sendToAPI(message, contexto);
+      return;
+    }
+
+    if (isExemplo(message)) {
+      await sendToAPI(
+        message,
+        codificacaoInfo + "\nMostre apenas um exemplo simples de saída (printar um valor), sem incluir todo o programa."
+      );
+      return;
+    }
+
+    if (estavaEmDuvida.saida) {
+      addMessage("Excelente! Parabéns 🎉");
+      duvidas.saida = 0;
+      estavaEmDuvida.saida = false;
+    }
+
+    await sendToAPI(
+      message,
+      codificacaoInfo + "\nO aluno sugeriu a saída do programa. Elogie o estudante pela conclusão."
+    ); 
+    currentStep = null; 
+    questaoAtual = "";
+    addMessage("🎉 Muito bem! Você completou todas as etapas: ENTENDIMENTO e CODIFICAÇÃO."); 
+    addMessage("Digite o número de outra questão (2 a 42) para continuar praticando!"); 
+    return; 
+  } 
+
+  // ---------------- FALLBACK ----------------
+  await sendToAPI(message, "Responda de forma educada e útil.");
 } 
 
 // ---------------------- Eventos ---------------------- 
@@ -382,26 +406,24 @@ messageInput.addEventListener('keypress', (e) => {
 }); 
 
 // ---------------------- Inicialização ---------------------- 
-async function initAPI() { 
-  if (!API_KEY) { 
-    console.warn("Nenhuma chave definida. Usando modo simulado."); 
-  } else { 
-    try { 
-      const { GoogleGenerativeAI } = await import("https://esm.run/@google/generative-ai"); 
-      const genAI = new GoogleGenerativeAI(API_KEY); 
-      model = genAI.getGenerativeModel({ model: "gemini-1.5-flash", systemInstruction: entendimentoInfo }); 
-      console.log("API carregada com sucesso."); 
-    } catch (error) { 
-      console.error("Erro ao carregar a API:", error); 
-    } 
-  } 
+async function initAPI() {
+    if (!API_KEY) {
+        console.warn("Nenhuma chave da API definida. Usando modo simulado.");
+        addMessage("⚠️ Nenhuma chave configurada. O assistente está em modo simulado.");
+    } else {
+        console.log("Chave API configurada. Pronto para usar!");
+        addMessage("✅ Conexão com a API estabelecida com sucesso!");
+    }
 
-  try { 
-    dadosPlanilha = await lerCSV(URL_CSV); 
-    addMessage("Digite o número da questão:."); 
-  } catch (error) { 
-    addMessage("Não consegui carregar o banco de questões.", false, true); 
-  } 
+    // carregamento da planilha
+    try {
+        dadosPlanilha = await lerCSV(URL_CSV);
+        console.log("Planilha carregada:", dadosPlanilha.length, "linhas.");
+        addMessage("Olá! Digite o número da questão que você quer ajuda (2 a 42).");
+    } catch (error) {
+        console.error("Erro ao carregar planilha:", error);
+        addMessage("❌ Não foi possível carregar os dados da planilha.", false, true);
+    }
 }
 
 initAPI();
